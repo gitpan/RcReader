@@ -1,0 +1,22 @@
+#!/usr/bin/perl
+# test file (as usual by my projects)
+#  -- $Revision: 0.5.2 $State: Exp $
+
+
+require RcReader;
+use RcReader qw( rc_cpp rc_init rc_parse rc_set rc_stop rc_free
+			rc_escape rc_eval );
+
+sub callback
+{
+  print "CALLER($_[0] === $_[1]);\n";  # + status info
+}
+
+$file	= $ARGV[0] || "quoter.test";
+open(FILE, $file) || die("$file:  $!\n");
+rc_init();
+rc_set("multivar", 0);
+($err, $ident, $sline, $cline, $file) = rc_parse(*FILE, \&callback);
+if($err < 0)
+{  die("[$file:$cline] error($err) ident($ident) start($sline)\n"); }
+rc_free();

@@ -1,0 +1,283 @@
+#!/usr/bin/less
+
+################################################################################
+
+Package name	: RcReader.pm
+Version		: 0.5.9
+Description	: Perl package for preprocessing and parsing config files
+License		: GNU GPL v2 or later (see file LICENSE)
+Author		: Samuel Behan <behan@frida.fri.utc.sk> (c) 2000-2001
+Homepage	: http://frida.fri.utc.sk/~behan/devel/RcReader or CPAN
+Requirements	: perl5.005 (maybe sooner - let me know, please)
+
+################################################################################
+
+
+ABOUT
+-----
+	RcReader is a perl package for working with (text) config files.
+  It contains C-like preprocessor (without macros), and file parser that
+  will parse given file and parsed values passes via callback function
+  to program. Also there are some simple functions for working with SCALLARS.
+  All functions were disigned to be flexible, but stabile, tolerant to user 
+  input (most malformed directives are correctly recognized). Conception
+  of whole package is a bit unusual - since preprocessing is done in one
+  function (and its ouput written to file) and parsing(+comment removing) in 
+  another.
+  <<TODO>>
+     + regexp backward compatibilty
+     + pod documentation
+  <<BUGS && TIPS>>
+	Any bugs and tips send to <sam@frida.fri.utc.sk>. I need a litle
+  feedback from you, how does it works in real life, and perl version it
+  accepts.
+
+
+FUNCTIONS
+---------
+    sub rc_cpp(*FILE_IN, *FILE_OUT, [$IDENT, $OPTIONS, %HASH]);
+	- this subroutine is an implementation of simple text preprocessor. 
+	  It supports inclusions, conditional preprocessing and output line 
+	  control. Macros are not (and will never be supported). Unlike
+	  C-preprocessors it supports command execution from code and direct
+	  enviroment modification (if argument %HASH not set).
+	     - %ifUSER == %if USER == %if defined(USER) == %ifdef USER
+	     - pair directives '%if..' don't need to be closed by '%endif'
+	Arguments:
+	  *FILE_IN	- pointer to input file to read from
+	  *FILE_OUT	- pointer to output file to write to
+	  $IDENT	- optional, identificator for identifying preprocessors 
+	  			direcetives, defaultly is it '%' (ie. %define)
+	  $OPTIONS	- optional, or-red options:
+		&CPP_NO_INCLUDE		- ignore %include directive
+		&CPP_NO_SUBINCLUDE	- ignore %include in included files
+		&CPP_NO_ERROR		- ignore %error directive
+		&CPP_NO_ECHO		- ignore %echo, %print.. directives
+		&CPP_NO_EXEC		- do not exec commands in %define
+		&CPP_NO_MARK		- disable lines/file marking to output
+	  %HASH		- optional, pointer to hash array that will be used for
+	  		symbols within %define, %if.. directives (If no given
+			%ENV is used). This is possible way how to control
+			program behavior like %define DEBUG for verbose
+			messages of the program...
+	Directives:
+	  %if EXPR	- expresion is perl formed condition. You can use all
+	  		perl operands including eq and ne, and functions
+			defined(), length, substr, //i (aka regular expresion)
+	  %ifdef EXPR
+	  %ifndef EXPR
+	  %elsif EXPR
+	  %elseif EXPR
+	  %else
+	  %endif	- usual preprocessor directives
+	  %define SYMBOL [VALUE]
+		    	- define SYMBOL, set it to value VALUE.
+		If VALUE is like $(command), then 'command' will be executed 
+		as it were shell command and output of it will be stored 
+		in SYMBOL (disabled if &CPP_NO_EXEC).
+		Shell variables in VALUE are replaced with its real value
+		(ie. $USER or ${USER} will be evaluted to 'root')
+	  %undef SYMBOL
+	  %undefine SYMBOL
+			- undefine symbol SYMBOL (remove it from enviroment)
+	  %echo MESSAGE
+	  %print MESSAGE
+	  %warning MESSAGE
+		    	- print message to STDERR (disabled if &CPP_NO_ECHO)
+	  %include FILE
+			- include given file (and preprocess it)
+		Including of files is disabled if &CPP_NO_INCLUDE is used 
+		and also you can disable including files from included file
+		if you'll use &CPP_NO_SUBINCLUDE
+	  %dnl		- comment, will be ignored (from m4)
+	Return value:
+	  If no error eccurs function returns number (>=0) of lines writen
+	  to file *FILE_OUT, else it returns 4-element array consisting
+	  from error number, name of the directive where error occured,
+	  line number where error occured and optionaly name of file
+	  error ocurred (only when error ocurred in included file).
+	Errors:
+		-1	- end of file reached to soon (missing 'endif')
+		-2	- malformed or missing directive argument
+		-3	- (perl) error evaluting 'if' condition (via eval())
+		-4	- error opening file to include
+		-5	- error a due to executing %error directive
+		-6	- unmatched 'else', 'elsif', 'elseif'
+		-7	- unknown directive (==bad formed directive)
+    sub rc_init();
+	- initialize/reset parser settings. Use it before running rc_parse()
+	  Function always returns 1.
+    sub rc_set($key, [$value]);
+	- modify parser settings. Use of improper key will cause error. 
+	Arguments:
+	  $key		- config key to set/get (see Keys)
+	  $value	- optional, new value to set
+	Keys:
+	  divider	- regular expresion that will be used to divide input
+	 	line to directives and values. 
+		Default is "\s*=\s*"	- divide by '='
+	  comments	- array of comments that should be recognized. Three
+	 	styles of comments are supported with modifiable identificators
+		   bash_style
+		   bash_style($start_ident)
+			- remove comments like bash does. Default ident. is '#'
+			  Bash style recognizes comment only if whitespace is
+			  found before comment identificator.
+			  ie.	xxxx	#this ti comment
+			  	xxxx#this is part of text
+		   c++_style
+		   c++_style($start_ident)
+		   	- removes comment in c++ style. Default ident. is '//'
+		   c_style
+		   c_style($start_ident, $end_ident)
+		   	- comments like C has. Default idents are '/*', '*/'
+			  This comment is multilined.
+			Default is bash_style.
+	 noeval		- do not auto evalute enviroment variables. ie. $USER
+	 		Default is false (undef).
+	 eval_vars	- pointer hash of variables that should be recognized. 
+	 		(not implemented yet)
+	 noescape	- do not escape character like \t,\n,\23,\xA5
+			  NOTE: escaping and evaluting is done only inside of
+				"" qoutations.
+			Default is false.
+	 line_control	- line control character. Recognize line control commands
+			  to determine origin of the text - so we can report
+			  errors correctly (rc_cpp marks output this way)
+			  ie. %line 1234 "inclusion.file" - will set internal
+			  position to line 1234 and file to 'inclusion.file'.
+			Default is '%' - means enabled.
+	 sections	- section control character. If enabled user can
+			  divide config file to sections and any errors can be
+			  reported 'from section'.
+			  ie. %section "GLOBAL SETTINGS"
+			Default is '%' - enabled.
+	 multivar	- parser can look for more 'directives' on one line, so
+	 		  user can assign one value to more directives at one time.
+			  ie.	dir = home_dir = "/path to anywhere"
+			  Default is true (1).
+	Return value: 
+	  Return value is value of the $key.
+    rc_parse(*FILE_IN,\&CALLBACK);
+    	- this functions goes trough given file and parses it. parsed value
+	  are passed to callback function. It parses file to directives and
+	  directive_values by "divider". Quoted strings ("",'') can be
+	  multiline. Quotations inside of such string has to be escaped by '\'.
+	  Strings quoted by "" are escaped and enviroment variables are escaped
+	  (this can be disabled setting "noeval", "noescape" to true by rc_set()).
+	Arguments:
+	  *FILE_IN	- pointer to input file
+	  \&CALLBACK	- callback function to that will be passed parsed 
+			  string. Passed arguments (* - can be undef)
+				1.  directive name
+				2. *directive value 
+				3. *starting line number (for multiline values)
+				4.  current line number
+	  			5. *current file name (undef means *FILE_IN)
+				6. *current section name
+	Return value:
+	  If no error occurs function return 1, else it is 5-element array
+	  consisting from error number, error character, starting line number,
+	  current line number, current filename, section name.
+	Errors:
+		-1	- required stop via rc_stop() (error character will
+				be the error_number passed to rc_stop)
+		-2	- eof reached before end of quotation found (error 
+				character will be the quotation)
+		-3	- eof reached before end of c_style comment (error
+				character will be the end comment identif.)
+    sub rc_stop([$error_number]);
+    	- stop parser. Optional argument $error_number will be returned by
+	  rc_parse() as error character. Function always return 1.	  
+    sub rc_free();
+ 	- free parser enviroment initiated by rc_init().
+    sub rc_escape($string);
+	- escape characters like \t, \n, \65, \A6 ... . Returns escaped string.
+    sub rc_eval($string);
+ 	- evalute enviroment variables in string. Returns the string.
+
+
+HOW-TO
+------
+  PREPROCESSOR->PARSER
+  -------------------
+    At first I' need to say something about releation between preprocessor a
+     (rc_cpp) and parser (rc_parse). Parsing preprocessed text can confuse parser
+     because he will if there ocurs some error, parser will report the position
+     of the error in the preprocessor output not in the real file. And thats the
+     problem how should user find his (or her ;-) error ???
+     To solve this problem i've modified the preprocessor to markup line and file
+     positions in its output using weel known '%line $linenumbe "$file"' directive.
+     I've to say that character '%' isn't hard coded - it depends on $IDENT arg.
+     of the rc_cpp(). And also i've modified parser to recognize this directive
+     and to change it's internal values. This feture is called line_control and
+     can be disabled by rc_set(). And also by rc_set() can be changed directive
+     control identificator (means '%' or whatever) that depends on the third arg.
+     of rc_cpp(). So if you will use as $IDENT for example char '#' than you hav
+     to call rc_set("line_control", '#'); so the parser will recognize right
+     directives.
+  PARSING
+  -------
+     I'll describe all the steps that parses does when parsing:
+     	0. it reads line ;-)
+	1. it splits line to quoted and unquoted parts. If quoted parts in not
+		ended it read next line while it will not find it.
+		Of course escaped quotations like \', and \" are not recognized
+		as quota beginings nor ends.
+	2. all these parts are preprocessed. Unquoted are splited by divider
+		and sourounding whitespace characters are removed.
+		In parts quoted by " are unescaped some special characters 
+		(\t,\n..) and enviroment variables are evaluted ie. $USER ${USER}
+	   In all parts are escaped quotations unescaped.
+	3. as a last things directives and its values + status (line, file...)
+	   	are sended as arguments to callback function.
+     And that's all folks.....
+
+
+EXAMPLE(rc_cpp)
+---------------
+  require RcReader;
+  use RcReader qw( rc_cpp );
+	   
+  open(INPUT, "<input.conf") || die("error: $!\n");
+  open(OUTPUT, ">output.tmp") || die("error: $!\n");
+  my($retval, $retcmd, $retline, $retfile)     # -- use rather array
+	   = rc_cpp(*INPUT, *OUTPUT, '%', (&CPP_NO_ERROR|&CPP_NO_EXEC));
+  if($retval < 0)
+  { $retfile = $retfile || "input.conf";	#for errors in main file
+    die("[$retfile:$retline] error $retval in directive $retcmd\n"); }
+  else
+  { print "Preprocessed $retval lines\n"; }
+
+EXAMPLE(rc_parse)
+-----------------
+  require RcReader';
+  use RcReader qw( rc_init rc_set rc_parse rc_stop rc_free );
+  
+  $INPUT_FILE	= "input.conf";
+  #call back function
+  sub callback
+  { #here load values
+    my($directive, $value)	= ($_[0], $_[1]);
+    my($start_line, $current_line) = ($_[2], $_[3]);
+    my($file)	= $_[4] || $INPUT_FILE;
+    #print parsed directive and its value
+    print "[$file:$current_line] $directive = $value\n";
+    return 1; }
+  
+  rc_init();			#initialize parser enviroment
+  rc_set("divider", ":=");	#divide by ':=' (pascal style variable assign)
+	#setup comments remove bash like comments (everything after '#'),
+	# m4 like comments (everything after 'dnl') and multiline comments 
+	# in COMMENT{...} (everything inside COMMENT{...})
+  rc_set("comments", ["bash_style", "bash_style(dnl)", "c_style(COMMENT{,})"]);
+  rc_set("line_control", undef);	#disable line control support
+  rc_set("section", undef);	#disable section support
+  
+  open(INPUT, $INPUT_FILE) || die("$INPUT_FILE: $!\n");
+  my(@RETVAL)	= rc_parse(*INPUT, \&callback);
+  if($RETVAL[0] != 1)	#error occured
+  { #print where occured error
+    $_[4]	= $_[4] || $INPUT_FILE;	#for current file
+    die("Error $_[0] occured in file $_[4] on line $_[3] (error char $_[2])\n");
+  }

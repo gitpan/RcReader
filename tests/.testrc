@@ -1,0 +1,15 @@
+hi=   " kto si ' || ja som KOCK\x41 a ty ? 
+       ja neviem \66  x \" \'  ' \68 x 
+       hello 
+       \" \" \'
+       1 " 2 xxx "  3 "
+
+xxx	= hello
+test 	= "hello" "other"
+	hi	= hello
+  <GOOGLE>
+    google_1	= hi
+    google_2	= hello
+  </GOOGLE>
+
+  test	= hi
