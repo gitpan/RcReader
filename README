@@ -156,6 +156,10 @@ FUNCTIONS
 	 		  user can assign one value to more directives at one time.
 			  ie.	dir = home_dir = "/path to anywhere"
 			  Default is true (1).
+	 nostrip	- parser automaticaly strip white characters from
+	 		  around of unquoted strings. Setting this true
+			  will disable this.
+			  Default is true (1).
 	Return value: 
 	  Return value is value of the $key.
     rc_parse(*FILE_IN,\&CALLBACK);
@@ -188,7 +192,7 @@ FUNCTIONS
 				character will be the end comment identif.)
     sub rc_stop([$error_number]);
     	- stop parser. Optional argument $error_number will be returned by
-	  rc_parse() as error character. Function always return 1.	  
+	  rc_parse() as error character. Function always returns 1.
     sub rc_free();
  	- free parser enviroment initiated by rc_init().
     sub rc_escape($string);

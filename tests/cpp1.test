@@ -1,3 +1,6 @@
-kocka je gulata
 
-eof
+hi
+%if USER eq
+hello
+
+%endif

@@ -1,8 +1,8 @@
-#!/usr/bin/perl
+#!/usr/bin/perl -w
 ################################################################################
 # RcReader.pm	version 0.5.9 (pre-release)
 # AUTHOR	: Samuel Behan <behan@frida.fri.utc.sk> (c) 2000-2001
-# HOMEPAGE	: http://frida.fri.utc.sk/~behan/devel/rc_reader
+# HOMEPAGE	: http://frida.fri.utc.sk/~behan/devel/RcReader
 # LICENSE	: GNU GPL v2 or later (see file LICENSE)
 ################################################################################
 
@@ -26,7 +26,7 @@ require Exporter;
 @EXPORT		= qw();
 @EXPORT_OK	= qw( rc_cpp rc_init rc_parse rc_set rc_stop rc_free
 			rc_eval rc_escape );
-$VERSION	= '0.5.9';
+$VERSION	= '0.5.9b';
 $AUTHOR		= 'Samuel Behan <behan@frida.fri.utc.sk>';
 
 ##
@@ -51,21 +51,21 @@ sub rc_cpp(\*\*;$$\%)
       COND_BLOCK:      $inblock++;
       if($condition eq '') { return (-2, "if", $linenum); }
       else 
-      { local $SIG{__DIE__}	= sub { $retval	= -3; };
-        local $SIG{__WARN__}	= sub { $retval	= -3; };
+      { local $SIG{'__DIE__'}	= sub { $retval	= -3; };
+        local $SIG{'__WARN__'}	= sub { $retval	= -3; };
         $retval	= eval("if($condition) { return 1; } else { return 0; }"); }
       $condition	= undef;
       if($retval == 0)
       { IGNORE_BLOCK:
         my($level); $level	= 1;
-	($_[1] && 040) || syswrite($FO, "${ident}line $linenum\n");
+	($_[1] && 040) || syswrite($FO, "${ident}line $linenum\n", length("${ident}line $linenum\n"));
         while(($level > 0) && ($line = <$FI>))
         { $linenum++;
 	  if($line	=~ /^${ident}(if|ifdef)\s+/o)	{ $level++; } 
 	  elsif($line	=~ /^${ident}endif/o)		{ $level--; }
 	  elsif($line	=~ /^${ident}else/o)		{ $level=0; } }
 	  if($level > 0) { return (-1, $cmd, $linenum); }
-	($_[1] && 040) || syswrite($FO, "${ident}line $linenum\n");
+	($_[1] && 040) || syswrite($FO, "${ident}line $linenum\n", length("${ident}line $linenum\n"));
       } elsif($retval != 1) { return ($retval, $cmd, $linenum); }
     }
     elsif($cmd	eq "elsif" || $cmd eq "elseif")
@@ -117,9 +117,9 @@ sub rc_cpp(\*\*;$$\%)
       defined($file) || return (-2, "include", $linenum);
       if($file =~ s/^(\"|\')//o) { $file =~ s/$1$//; }
       open(FILE, $file) || return (-4, "include", $linenum);
-      ($_[1] && 040) || syswrite($FO, "${ident}line 0 \"$file\"\n");
+      ($_[1] && 040) || syswrite($FO, "${ident}line 0 \"$file\"\n", length("${ident}line 0 \"$file\"\n"));
       my ($rval, $rmessg, $rlin) = rc_cpp(*FILE, $FO, $ident, ($_[1] | 100));
-      ($_[1] && 040) || syswrite($FO, "${ident}line $linenum\n");
+      ($_[1] && 040) || syswrite($FO, "${ident}line $linenum \"$file\"\n", length("${ident}line $linenum \"$file\"\n"));
       if($rval < 0) { return ($rval, $rmessg, $rlin, $file); }
       else { $lcnt += $rval; } }
     elsif($cmd eq "dnl") {}		#dnl COMMENT
@@ -139,6 +139,7 @@ sub rc_init
 	'stop_state'	=> undef,
 	'comments'	=> ['bash_style'],
 	'multivar'	=> 1,
+	'nostrip'	=> undef,
 	'noeval'	=> undef,
 	'eval_vars'	=> undef,
 	'noescape'	=> undef,
@@ -152,7 +153,8 @@ sub rc_init
 sub rc_set($;$)
 {
   defined(%OPTIONS) || rc_init();
-  if(exists($OPTIONS{$_[0]})) { return ($OPTIONS{$_[0]} = $_[1]); }
+  if(exists($OPTIONS{$_[0]})) 
+  { return ($OPTIONS{$_[0]} = $_[1]); }
   my($pckg, $fil, $lin)	= caller;
   die("[$fil:$lin] argument error calling rc_set(@_)\n");
   return undef;
@@ -163,11 +165,11 @@ sub rc_set($;$)
 sub rc_parse(\*&)
 {
   my($FILE, $line, $slinenum, $linenum, $cfile, $csect);
-  $linenum = 0; $FILE	= shift; $cfile='.';
+  $linenum = 0; $FILE	= shift(@_); $cfile='.';
 
   defined(%OPTIONS) || rc_init();	#autoinit
   while(defined($FILE) && ($line = <$FILE>) && !defined($OPTIONS{'stop_state'}))
-  {  $linenum++;$slinenum = 0;		#increment line number
+  {  $linenum++;$slinenum = undef;		#increment line number
      if($line	=~ /^\s*$/o) { next; }	#ignore empty
      if(defined($OPTIONS{'line_control'}) &&
      	  $line	=~ /^$OPTIONS{'line_control'}line(\s+|$)(\d+)?(\s+\"(\w+)\")?\s*$/)#"
@@ -192,7 +194,7 @@ sub rc_parse(\*&)
 #######
 	      if($line =~ s/^(["'])((?:\\.|(?!\1)[^\\])*)\1//o)#"
 	      { push(@parsed, pop(@parsed).$2); last; } }
-	    defined($aline) || return (-2, $quot, $slinenum, $linenum, $cfile, $csect);
+	    defined($aline) || return (-2, $quot, $slinenum || $linenum, $linenum, $cfile, $csect);
 	    chomp($line); } }
 	elsif($line	=~ s/^((\\["']|.)+?)(['"]|$)//o 
 		|| $line	=~ s/^((\\["']|.)*)$//o)	#"#
@@ -200,7 +202,7 @@ sub rc_parse(\*&)
 #FIXME: check
 	  (!defined($num3) && $#parsed) && ($pars = pop(@parsed).$pars);
 	  sub revers{(length($_[0])?revers(substr($_[0],1)):'').substr($_[0],0,1);}
-	  foreach $comment (@{$OPTIONS{"comments"}})	#remove comments
+	  foreach $comment (@{$OPTIONS{'comments'}})	#remove comments
 	  { if($comment	=~ /^c_style(\((.+?)(,(.*))?\))?$/o)
 	    { my($cm_start, $cm_end, $end) = ($2 || '/*', $4 || revers($2) || '*/');
 	      $cm_start =~ s/(.)/\\$1/og; $end = $cm_end; $cm_end =~ s/(.)/\\$1/og;
@@ -213,7 +215,7 @@ sub rc_parse(\*&)
 		       $line = $aline; }
 		    if($line =~ s/^(.*?)$cm_end//m)
 		    { last; } $line = undef; }
-		  defined($aline) || return(-3, $end, $slinenum, $linenum, $cfile, $csect);
+		  defined($aline) || return(-3, $end, $slinenum || $linenum, $linenum, $cfile, $csect);
 	        } } }  #if (c_comment)
 	    elsif($comment	=~ /^(bash_style|c\+\+_style)(\((.+)\))?$/o)
 	    { my($bash) = ($1 eq 'bash_style') ? '\s' : undef;
@@ -232,27 +234,30 @@ sub rc_parse(\*&)
      while(($str = shift(@parsed)))
      { if($pos % 2 == 0) 		#look for plain
        { $str	=~ s/\\(["'])/$1/og;	#"#alter escaped quotes
-         while((!$multi || $OPTIONS{"multivar"}) && $str =~ s/^(.*?)$OPTIONS{"divider"}//)
+         while((!$multi || $OPTIONS{'multivar'}) && $str =~ s/^(.*?)$OPTIONS{'divider'}//)
          { $tags[$tag_pos] .= $1; #increment and remove souroundig blanks
-	   if($tags[$tag_pos] =~ /^\s*([\S\r\n]+(\s+[\S\r\n]+)*)\s*$/o)
-	   { $tags[$tag_pos++] = $1; }
+	   if(defined($OPTIONS{'nostrip'}) ||
+	   	  $tags[$tag_pos] =~ /^\s*([\S\r\n]+(\s+[\S\r\n]+)*)\s*$/o)
+	   { defined($OPTIONS{'nostrip'}) || ($tags[$tag_pos] = $1); 
+	     $tag_pos++; }
 	   $multi = 1; } }
        else				#look for quoted
        { $str	=~ s/\\\'/\'/og;
-       	 $str	=~ s/\\(\n|\r)+//o;	#escape backslashed line
+       	 $str	=~ s/\\(\n|\r)//gom;	#escape backslashed line
          if(substr($str, 0, 1) eq '"')
          { $str	=~ s/\\\"/\"/og;
-	   ($OPTIONS{"noeval"}) || ($str = rc_eval($str, $OPTIONS{"eval_vars"}));
-           ($OPTIONS{"noescape"})||($str = rc_escape($str)); } 
+	   ($OPTIONS{'noeval'}) || ($str = rc_eval($str, $OPTIONS{'eval_vars'}));
+           ($OPTIONS{'noescape'})||($str = rc_escape($str)); } 
 	  $str	= substr($str, 1); }
        $tags[$tag_pos]	.= $str; $pos++; }
      if(defined($tags[$tag_pos]))
-     { if($tags[$tag_pos] =~ /^\s*([\S\r\n]+(\s+[\S\r\n]+)*)\s*$/o)
-       { $tags[$tag_pos] = $1; } }
+     { if(defined($OPTIONS{'nostrip'}) ||
+     		$tags[$tag_pos] =~ /^\s*([\S\r\n]+(\s+[\S\r\n]+)*)\s*$/o)
+       { defined($OPTIONS{'nostrip'}) || ($tags[$tag_pos] = $1);  } }
      #call callback function that cares about data storing
      $str = undef; if($#tags != 0) { $str = pop(@tags); }
      while(($pos = shift(@tags)))
-     { &{$_[0]}($pos, $str, $slinenum, $linenum, $cfile, $csect); }
+     { &{$_[0]}($pos, $str, $slinenum || $linenum, $linenum, $cfile, $csect); }
   }
   return (!defined($OPTIONS{'stop_state'})) ? 1 :
   		(-1, $OPTIONS{'stop_state'}, $slinenum, $linenum, $cfile, $csect);
